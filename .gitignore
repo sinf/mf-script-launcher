@@ -1,0 +1,6 @@
+config.json
+*.swp
+*.swo
+mf-script-launcher
+*.crt
+*.key
