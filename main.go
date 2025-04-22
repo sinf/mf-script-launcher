@@ -32,9 +32,7 @@ type Service struct {
     Command []string `json:"command"`
 }
 
-/* example config:
-
-{
+var EXAMPLE_CONFIG string = `{
     "port": 3000,
     "bind_ip": "127.0.0.1",
     "tls_privkey": "blah.key",
@@ -47,9 +45,7 @@ type Service struct {
         {"name": "Current User", "command": ["whoami"]},
         {"name": "Echo stuff", "command": ["echo", "client ip", "%IP%", "port", "%PORT%"]}
     ]
-}
-
-*/
+}`
 
 func loadConfig(filename string) (*Config, error) {
     file, err := os.Open(filename)
@@ -254,6 +250,8 @@ func main() {
     config, err := loadConfig("config.json")
     if err != nil {
         fmt.Println("Error loading config:", err)
+        fmt.Println("Example config:")
+        fmt.Println(EXAMPLE_CONFIG)
         return
     }
 
