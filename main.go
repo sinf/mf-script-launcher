@@ -67,31 +67,43 @@ func loadConfig(filename string) (*Config, error) {
     return &config, nil
 }
 
+type FrontPageData struct {
+	CurrentTime string
+	Services []Service
+}
+
 func generateForm(services []Service) string {
-    formTemplate := `
-    <!DOCTYPE html>
-    <html>
-    <head><title>Service Selector</title></head>
-    <body>
-        <form action="/submit" method="post">
-            <label>Enter passphrase: <input type="text" name="passphrase" required></label><br>
-            <label>Enter secret code: <input type="text" name="secret_code" required></label><br>
-            <label>Select service:<br/>
-                {{range .}}
-                    <label>
-                        <input type="checkbox" name="service" value="{{.Name}}" />
-                        {{.Name}}
-                    </label><br/>
-                {{end}}
-            </label><br>
-            <button type="submit">Submit</button>
-        </form>
-    </body>
-    </html>
-    `
+	data := FrontPageData {
+		CurrentTime: time.Now().UTC().Format(time.RFC3339),
+		Services: services,
+	}
+    formTemplate := `<!DOCTYPE html>
+<html>
+<head><title>Service Selector</title></head>
+<body>
+    <form action="/submit" method="post">
+        <label>Enter passphrase: <input type="password" name="passphrase" required></label><br>
+        <label>Enter secret code: <input type="text" name="secret_code" required></label><br>
+        <label>Select service:<br/>
+            {{range .Services}}
+                <label>
+                    <input type="checkbox" name="service" value="{{.Name}}" />
+                    {{.Name}}
+                </label><br/>
+            {{end}}
+        </label><br>
+        <button type="submit">Submit</button>
+    </form>
+    <p>
+    Current server timestamp: {{ .CurrentTime }} <br/>
+    Current client timestamp: <span id="servertime"><noscript>(dunno, js disabled)</noscript></span>
+    </p>
+	<script>document.getElementById("servertime").textContent = new Date().toISOString(); </script>
+</body>
+</html>`
     tmpl := template.Must(template.New("form").Parse(formTemplate))
     var renderedForm strings.Builder
-    err := tmpl.Execute(&renderedForm, services)
+    err := tmpl.Execute(&renderedForm, data)
     if err != nil {
         return "Error generating form."
     }
