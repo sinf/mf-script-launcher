@@ -4,3 +4,4 @@ config.json
 mf-script-launcher
 *.crt
 *.key
+build

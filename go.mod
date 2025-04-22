@@ -1,3 +1,3 @@
 module github.com/sinf/mf-script-launcher
 
-go 1.24.2
+go 1.23.8
