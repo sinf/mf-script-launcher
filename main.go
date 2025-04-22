@@ -258,6 +258,14 @@ func handleSubmit(config *Config, w http.ResponseWriter, r *http.Request) {
     submitOK(config, w, r)
 }
 
+func test_totp_generator(secret string) {
+    now := time.Now().Unix()
+    fmt.Println("Testing TOTP generator")
+    fmt.Printf("TOTP -30s: %06d\n", TOTP(secret, (now - 30)))
+    fmt.Printf("TOTP + 0s: %06d\n", TOTP(secret, now))
+    fmt.Printf("TOTP +30s: %06d\n", TOTP(secret, (now + 30)))
+}
+
 func main() {
     config, err := loadConfig("config.json")
     if err != nil {
@@ -265,6 +273,11 @@ func main() {
         fmt.Println("Example config:")
         fmt.Println(EXAMPLE_CONFIG)
         return
+    }
+
+	if len(os.Args)>1 && os.Args[1] == "-t" {
+    	test_totp_generator(config.TotpSecret)
+    	return
     }
 
     http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -287,13 +300,5 @@ func main() {
     if err != nil {
         fmt.Println("Error starting server:", err)
     }
-}
-
-func main1() {
-    secret := "banaani"
-    now := time.Now().Unix()
-    fmt.Printf("TOTP -30s: %06d\n", TOTP(secret, (now - 30)))
-    fmt.Printf("TOTP + 0s: %06d\n", TOTP(secret, now))
-    fmt.Printf("TOTP +30s: %06d\n", TOTP(secret, (now + 30)))
 }
 
