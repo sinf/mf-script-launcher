@@ -36,7 +36,8 @@ Example services.json
                 "--destination-ip", "xxxxxxxxxxxx",
                 "--destination-port", "443",
                 "--opening-duration", "600"
-            ]
+            ],
+            "link": "https://xxxxxxxxxxxxxxxxx"
         }
     ]
 }
@@ -53,4 +54,29 @@ Select service:
 [ ] Example 3 - let me browse cool secret page just for a moment
 ( Submit )
 ```
+
+Ingredients for a iptables-based firewall script that creates short-lived temporary rules.  
+```
+# Only need one firewall rule and ipset.
+# - Source/destination IP's must be in predefined subnet, regardless of ipset content
+# - Source/destination interface must be something
+# - New connections only. Another preexisting rule handles established connections
+# - ipset must have a match for (source ip, destination port, destination ip)
+# - ipset rows get automatically deleted when timeout expires
+
+# One-time initial setup:
+ipset create $ipset_name hash:ip,port,ip timeout 1 comment
+iptables -I $chain -i $interface_in -o $interface_out -s $net_in -d $net_out -m conntrack --ctstate NEW -m set --match-set $ipset_name src,dst,dst -j ACCEPT
+
+# This is for firewall script called by the MFA portal, which adds a temporary row to ipset.
+# proto_port could be something like tcp:443
+# To reset timer to maximum value when entry already exists, it must be deleted and re-added
+ipset del "$ipset_name" "$src_ip,$proto_port,$dst_ip"
+ipset add "$ipset_name" "$src_ip,$proto_port,$dst_ip" timeout "$timeout" comment "$comment"
+
+# Shutdown
+iptables -D $chain .....
+ipset destroy $ipset_name
+```
+
 
