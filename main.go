@@ -337,6 +337,7 @@ func main() {
         fmt.Println("Example config.json")
         fmt.Println(EXAMPLE_CONFIG)
         fmt.Println("You could also put services section into services.json")
+        return
     }
     log.Println("Loaded config.json")
 
