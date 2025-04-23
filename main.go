@@ -28,6 +28,7 @@ type Config struct {
     Passphrase string    `json:"passphrase"`
     TotpSecret string    `json:"totpsecret"`
     Services   []Service `json:"services"`
+    ServiceMap map[string]*Service
 }
 
 type Service struct {
@@ -35,6 +36,8 @@ type Service struct {
     Command []string `json:"command"`
     // optional extra description to show on web form
     Descr   string `json:"descr"`
+    // optional link displayed if the authentication is succesful
+    Link    string `json:"link"`
 }
 
 const SCRIPT_TIMEOUT_SEC = 30
@@ -194,27 +197,52 @@ func validateCode(config *Config, passphrase string, totp_code string) bool {
     return passphrase == config.Passphrase && validateTOTP(config, totp_code)
 }
 
-func findServiceByName(services []Service, inputName string) *Service {
-    for _, service := range services {
-        if service.Name == inputName {
-            return &service
-        }
-    }
-    return nil
-}
-
-func submitOK(config *Config, w http.ResponseWriter, r *http.Request) {
-    fmt.Fprint(w, `<!DOCTYPE html>
+func makeSubmitOkPage(config *Config, serviceNames []string) string {
+    header := `<!DOCTYPE html>
 <html>
 <head>
-<title>Submission Successful</title>
+<title>Authentication successful</title>
 <link rel="stylesheet" href="style.css" type="text/css">
 </head>
 <body>
-    <p>OK</p>
+    <p>Authentication successful</p>
     <p><a href="/">Go back to form</a></p>
+    <hr/>`
+    footer := `
 </body>
-</html>`)
+</html>`
+    page := header + footer
+
+    linkTemplate := `<ul id="sv-links">
+{{ range . }}
+<li>
+	<a href="{{.Link}}">
+		<span>{{.Name}}</span>
+		<span>{{.Link}}</span>
+	</a>
+</li>
+{{ end }}
+</ul>`
+    var services []*Service
+
+    for _, svName := range serviceNames {
+        sv := config.ServiceMap[svName]
+        if sv != nil {
+            services = append(services, sv)
+        }
+    }
+
+    tmpl := template.Must(template.New("form").Parse(linkTemplate))
+    var renderedForm strings.Builder
+    err := tmpl.Execute(&renderedForm, services)
+    if err == nil {
+        page = header + renderedForm.String() + footer
+    } else {
+        log.Println("failed to generate link table", err)
+        // user sees no error
+    }
+
+    return page
 }
 
 func serveErrorPage(w http.ResponseWriter, errorMessage string, statusCode int) {
@@ -282,7 +310,7 @@ func runServices(config *Config, serviceNames []string, clientAddr string) {
     }
 
     for _, serviceName := range serviceNames {
-        srv := findServiceByName(config.Services, serviceName)
+        srv := config.ServiceMap[serviceName]
         if srv != nil && len(srv.Command)>0  {
             go backgroundCmd(srv, ip, port)
         }
@@ -302,7 +330,8 @@ func handleSubmit(config *Config, w http.ResponseWriter, r *http.Request) {
     if validateCode(config, userPass, userSecret) {
         selectedServices := r.Form["service"]
         go runServices(config, selectedServices, r.RemoteAddr)
-        submitOK(config, w, r)
+        page := makeSubmitOkPage(config, selectedServices)
+        fmt.Fprint(w, page)
     } else {
         serveErrorPage(w, "Unauthorized", http.StatusUnauthorized)
     }
@@ -329,15 +358,14 @@ func test_totp_generator(secret string) {
     log.Printf("TOTP +30s: %06d\n", TOTP(secret, (now + 30)))
 }
 
-func main() {
-    log.Println("Startup")
+func initialSetup() *Config {
     config, err := loadConfig("config.json")
     if err != nil {
         fmt.Println("Error loading config:", err)
         fmt.Println("Example config.json")
         fmt.Println(EXAMPLE_CONFIG)
         fmt.Println("You could also put services section into services.json")
-        return
+        os.Exit(1)
     }
     log.Println("Loaded config.json")
 
@@ -351,6 +379,11 @@ func main() {
         log.Println("Loaded additional service lines from services.json")
     }
 
+    config.ServiceMap = make(map[string]*Service)
+    for i, sv := range config.Services {
+        config.ServiceMap[ sv.Name ] = &config.Services[i]
+    }
+
     // if this fails, whatever
     loadStyle("style.css")
 
@@ -358,6 +391,14 @@ func main() {
         log.Println("No services defined. Include a \"services\" key in either config")
         os.Exit(1)
     }
+
+    return config
+}
+
+func main() {
+    var err error
+    log.Println("Startup")
+    config := initialSetup()
 
     if len(os.Args)>1 && os.Args[1] == "-t" {
         // Test mode: validate config syntax and TOTP generator output
