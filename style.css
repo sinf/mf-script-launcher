@@ -1,0 +1,14 @@
+body {
+	background-color: #222;
+	color: #aaa;
+}
+a[href] {
+	color: #1e8ad6;
+}
+a[href]:hover {
+	color: #3ba0e6;
+}
+.descr {
+	opacity: 0.5;
+}
+

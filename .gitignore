@@ -5,3 +5,4 @@ mf-script-launcher
 *.crt
 *.key
 build
+services.json

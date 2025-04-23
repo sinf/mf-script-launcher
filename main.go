@@ -2,14 +2,17 @@ package main
 
 import (
     "encoding/json"
+    "log"
     "fmt"
     "io/ioutil"
+    "net"
     "net/http"
     "os"
     "os/exec"
     "strings"
     "html/template"
-
+    "context"
+    // for totp:
     "time"
     "crypto/hmac"
     "crypto/sha1"
@@ -30,9 +33,13 @@ type Config struct {
 type Service struct {
     Name    string `json:"name"`
     Command []string `json:"command"`
+    // optional extra description to show on web form
+    Descr   string `json:"descr"`
 }
 
-var EXAMPLE_CONFIG string = `{
+const SCRIPT_TIMEOUT_SEC = 30
+
+const EXAMPLE_CONFIG string = `{
     "port": 3000,
     "bind_ip": "127.0.0.1",
     "tls_privkey": "blah.key",
@@ -40,25 +47,39 @@ var EXAMPLE_CONFIG string = `{
     "passphrase": "supersecret123",
     "totpsecret": "banaani",
     "services": [
-        {"name": "List Files", "command": ["ls"]},
-        {"name": "Show Date", "command": ["date"]},
-        {"name": "Current User", "command": ["whoami"]},
-        {"name": "Echo stuff", "command": ["echo", "client ip", "%IP%", "port", "%PORT%"]}
+        {"name": "Test button", "command": ["id"]},
+        {"name": "Test button 2", "command": ["date"], "descr": "additional text"},
+        {"name": "Test button 3", "command": ["echo", "client ip", "%IP%", "port", "%PORT%"]}
     ]
 }`
 
-func loadConfig(filename string) (*Config, error) {
+var STYLESHEET string = ""
+
+func readFile(filename string) ([]byte, error) {
     file, err := os.Open(filename)
     if err != nil {
         return nil, err
     }
     defer file.Close()
+    return ioutil.ReadAll(file)
+}
 
-    data, err := ioutil.ReadAll(file)
+func loadStyle(filename string) {
+    data, err := readFile(filename)
+    if err == nil {
+        STYLESHEET = string(data)
+        log.Println("Loaded", filename)
+    } else {
+        STYLESHEET = ""
+        log.Println("Failed to load", filename, err)
+    }
+}
+
+func loadConfig(filename string) (*Config, error) {
+    data, err := readFile(filename)
     if err != nil {
         return nil, err
     }
-
     var config Config
     err = json.Unmarshal(data, &config)
     if err != nil {
@@ -68,37 +89,47 @@ func loadConfig(filename string) (*Config, error) {
 }
 
 type FrontPageData struct {
-	CurrentTime string
-	Services []Service
+    Style string
+    CurrentTime string
+    Services []Service
 }
 
 func generateForm(services []Service) string {
-	data := FrontPageData {
-		CurrentTime: time.Now().UTC().Format(time.RFC3339),
-		Services: services,
-	}
+    data := FrontPageData {
+        CurrentTime: time.Now().UTC().Format(time.RFC3339),
+        Services: services,
+    }
     formTemplate := `<!DOCTYPE html>
 <html>
-<head><title>Service Selector</title></head>
+<head>
+<title>MFA service portal</title>
+<link rel="stylesheet" href="style.css" type="text/css">
+</head>
 <body>
+    <h3>MFA service portal</h3>
     <form action="/submit" method="post">
-        <label>Enter passphrase: <input type="password" name="passphrase" required></label><br>
-        <label>Enter secret code: <input type="text" name="secret_code" required></label><br>
+        <label for="passphrase-input">Enter passphrase:</label>
+        <input id="passphrase-input" type="password" name="passphrase" required autocomplete="current-password">
+        <br>
+        <label for="totp-input">Enter secret code:</label>
+        <input id="totp-input" type="text" name="secret_code" required>
+        <br>
         <label>Select service:<br/>
             {{range .Services}}
                 <label>
                     <input type="checkbox" name="service" value="{{.Name}}" />
                     {{.Name}}
-                </label><br/>
+                </label> <span class="descr">{{ .Descr }}</span>
+                <br>
             {{end}}
         </label><br>
         <button type="submit">Submit</button>
     </form>
     <p>
-    Current server timestamp: {{ .CurrentTime }} <br/>
+    Current server timestamp: {{ .CurrentTime }} <br>
     Current client timestamp: <span id="servertime"><noscript>(dunno, js disabled)</noscript></span>
     </p>
-	<script>document.getElementById("servertime").textContent = new Date().toISOString(); </script>
+    <script>document.getElementById("servertime").textContent = new Date().toISOString(); </script>
 </body>
 </html>`
     tmpl := template.Must(template.New("form").Parse(formTemplate))
@@ -175,7 +206,10 @@ func findServiceByName(services []Service, inputName string) *Service {
 func submitOK(config *Config, w http.ResponseWriter, r *http.Request) {
     fmt.Fprint(w, `<!DOCTYPE html>
 <html>
-<head><title>Submission Successful</title></head>
+<head>
+<title>Submission Successful</title>
+<link rel="stylesheet" href="style.css" type="text/css">
+</head>
 <body>
     <p>OK</p>
     <p><a href="/">Go back to form</a></p>
@@ -187,7 +221,10 @@ func serveErrorPage(w http.ResponseWriter, errorMessage string, statusCode int) 
     w.WriteHeader(statusCode)
     fmt.Fprintf(w, `<!DOCTYPE html>
 <html>
-<head><title>Error</title></head>
+<head>
+<title>Error</title>
+<link rel="stylesheet" href="style.css" type="text/css">
+</head>
 <body>
     <p style="color: red;">Error %d: %s</p>
     <p><a href="/">Go back to form</a></p>
@@ -196,11 +233,10 @@ func serveErrorPage(w http.ResponseWriter, errorMessage string, statusCode int) 
 }
 
 func backgroundCmd(srv *Service, clientIp string, clientPort string) {
-    fmt.Println("Client", clientIp, ":", clientPort, "called service", srv.Name)
+    logprefix := "[" + srv.Name + "] " + clientIp + "_" + clientPort + " "
 
     args := make([]string, len(srv.Command))
     copy(args, srv.Command)
-
     for i, arg := range args {
         if arg == "%IP%" {
             args[i] = clientIp
@@ -208,35 +244,51 @@ func backgroundCmd(srv *Service, clientIp string, clientPort string) {
         if arg == "%PORT%" {
             args[i] = clientPort
         }
+        if arg == "%DESCR%" {
+            args[i] = srv.Descr
+        }
+        if arg == "%NAME%" {
+            args[i] = srv.Name
+        }
     }
-    fmt.Println(args)
+    log.Println(logprefix, args)
 
-    cmd := exec.Command(args[0], args[1:]...)
+    ctx, cancel := context.WithTimeout(context.Background(), SCRIPT_TIMEOUT_SEC*time.Second)
+    defer cancel()
+
+    cmd := exec.CommandContext(ctx, args[0], args[1:]...)
     cmd.Stdout = os.Stdout
     cmd.Stderr = os.Stderr
     err := cmd.Start()
     if err != nil {
-        fmt.Println("Tried to run command:\n", args, "\nError:\n", err)
+        log.Println(logprefix, "Tried to run command:\n", args, "\nError:\n", err)
+        return
+    }
+    err = cmd.Wait()
+    if ctx.Err() == context.DeadlineExceeded {
+        log.Println(logprefix, "command timed out")
+    } else if err != nil {
+        log.Println(logprefix, err)
+    } else {
+        log.Println(logprefix, "complete")
     }
 }
 
 func runServices(config *Config, serviceNames []string, clientAddr string) {
-
-    // IPv6 not supported. TODO / FIXME
-    parts := strings.Split(clientAddr, ":")
-    if len(parts) != 2 {
-        fmt.Println("Client has bad address", clientAddr)
+    ip, port, err := net.SplitHostPort(clientAddr)
+    if err != nil {
+        log.Println("Client has bad address", err)
         return
     }
-    ip := parts[0]
-    port := parts[1]
 
     for _, serviceName := range serviceNames {
         srv := findServiceByName(config.Services, serviceName)
         if srv != nil && len(srv.Command)>0  {
-            backgroundCmd(srv, ip, port)
+            go backgroundCmd(srv, ip, port)
         }
     }
+
+    log.Println("Service start goroutine exit")
 }
 
 func handleSubmit(config *Config, w http.ResponseWriter, r *http.Request) {
@@ -244,42 +296,75 @@ func handleSubmit(config *Config, w http.ResponseWriter, r *http.Request) {
         serveErrorPage(w, "Invalid request method", http.StatusMethodNotAllowed)
         return
     }
-
     userPass := r.FormValue("passphrase")
     userSecret := r.FormValue("secret_code")
-    selectedServices := r.Form["service"]
 
-    if ! validateCode(config, userPass, userSecret) {
+    if validateCode(config, userPass, userSecret) {
+        selectedServices := r.Form["service"]
+        go runServices(config, selectedServices, r.RemoteAddr)
+        submitOK(config, w, r)
+    } else {
         serveErrorPage(w, "Unauthorized", http.StatusUnauthorized)
+    }
+}
+
+func handleStyle(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+        http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
         return
     }
-
-    go runServices(config, selectedServices, r.RemoteAddr)
-    submitOK(config, w, r)
+    if len(STYLESHEET)==0 {
+        http.Error(w, "No css available. Use your browser default style", http.StatusNotFound)
+        return
+    }
+    w.Header().Set("Content-Type", "text/css")
+    fmt.Fprint(w, STYLESHEET)
 }
 
 func test_totp_generator(secret string) {
     now := time.Now().Unix()
-    fmt.Println("Testing TOTP generator")
-    fmt.Printf("TOTP -30s: %06d\n", TOTP(secret, (now - 30)))
-    fmt.Printf("TOTP + 0s: %06d\n", TOTP(secret, now))
-    fmt.Printf("TOTP +30s: %06d\n", TOTP(secret, (now + 30)))
+    log.Println("Testing TOTP generator")
+    log.Printf("TOTP -30s: %06d\n", TOTP(secret, (now - 30)))
+    log.Printf("TOTP + 0s: %06d\n", TOTP(secret, now))
+    log.Printf("TOTP +30s: %06d\n", TOTP(secret, (now + 30)))
 }
 
 func main() {
+    log.Println("Startup")
     config, err := loadConfig("config.json")
     if err != nil {
         fmt.Println("Error loading config:", err)
-        fmt.Println("Example config:")
+        fmt.Println("Example config.json")
         fmt.Println(EXAMPLE_CONFIG)
+        fmt.Println("You could also put services section into services.json")
+    }
+    log.Println("Loaded config.json")
+
+    service_config, err := loadConfig("services.json")
+    if err == nil && service_config.Services != nil {
+        if config.Services == nil {
+            config.Services = service_config.Services
+        } else {
+            config.Services = append(config.Services, service_config.Services...)
+        }
+        log.Println("Loaded additional service lines from services.json")
+    }
+
+    // if this fails, whatever
+    loadStyle("style.css")
+
+    if len(config.Services) == 0 {
+        log.Println("No services defined. Include a \"services\" key in either config")
+        os.Exit(1)
+    }
+
+    if len(os.Args)>1 && os.Args[1] == "-t" {
+        // Test mode: validate config syntax and TOTP generator output
+        test_totp_generator(config.TotpSecret)
         return
     }
 
-	if len(os.Args)>1 && os.Args[1] == "-t" {
-    	test_totp_generator(config.TotpSecret)
-    	return
-    }
-
+    http.HandleFunc("/style.css", handleStyle)
     http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
         handleForm(config, w, r)
     })
@@ -290,15 +375,15 @@ func main() {
     serverAddr := fmt.Sprintf("%s:%d", config.BindIP, config.Port)
 
     if len(config.TlsPrivKey)>0 && len(config.TlsCert)>0 {
-        fmt.Println("Listening on https://" + serverAddr)
+        log.Println("Listening on https://" + serverAddr)
         err = http.ListenAndServeTLS(serverAddr, config.TlsCert, config.TlsPrivKey, nil)
     } else {
-        fmt.Println("WARNING: unencrypted http")
-        fmt.Println("Listening on http://" + serverAddr)
+        log.Println("WARNING! unencrypted http")
+        log.Println("Listening on http://" + serverAddr)
         err = http.ListenAndServe(serverAddr, nil)
     }
     if err != nil {
-        fmt.Println("Error starting server:", err)
+        log.Println("Error starting server:", err)
     }
 }
 
