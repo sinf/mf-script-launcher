@@ -56,8 +56,7 @@ const EXAMPLE_CONFIG string = `{
     ]
 }`
 
-// If style.css exists, it replaces this at program startup.
-var STYLESHEET string = `
+const STYLESHEET string = `
 body {
     background-color: #222;
     color: #aaa;
@@ -80,17 +79,6 @@ func readFile(filename string) ([]byte, error) {
     }
     defer file.Close()
     return ioutil.ReadAll(file)
-}
-
-func loadStyle(filename string) {
-    data, err := readFile(filename)
-    if err == nil {
-        STYLESHEET = string(data)
-        log.Println("Loaded", filename)
-    } else {
-        STYLESHEET = ""
-        log.Println("Failed to load", filename, err)
-    }
 }
 
 func loadConfig(filename string) (*Config, error) {
@@ -399,9 +387,6 @@ func initialSetup() *Config {
     for i, sv := range config.Services {
         config.ServiceMap[ sv.Name ] = &config.Services[i]
     }
-
-    // if this fails, whatever
-    loadStyle("style.css")
 
     if len(config.Services) == 0 {
         log.Println("No services defined. Include a \"services\" key in either config")
