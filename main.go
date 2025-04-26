@@ -120,6 +120,7 @@ func generateForm(services []Service) string {
     formTemplate := `<!DOCTYPE html>
 <html>
 <head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MFA service portal</title>
 <link rel="stylesheet" href="style.css" type="text/css">
 </head>
@@ -216,6 +217,7 @@ func makeSubmitOkPage(config *Config, serviceNames []string) string {
     header := `<!DOCTYPE html>
 <html>
 <head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Authentication successful</title>
 <link rel="stylesheet" href="style.css" type="text/css">
 </head>
@@ -265,6 +267,7 @@ func serveErrorPage(w http.ResponseWriter, errorMessage string, statusCode int) 
     fmt.Fprintf(w, `<!DOCTYPE html>
 <html>
 <head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Error</title>
 <link rel="stylesheet" href="style.css" type="text/css">
 </head>
