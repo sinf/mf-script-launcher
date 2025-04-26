@@ -1,8 +1,10 @@
 # mf-script-launcher
 
-This tiny web service has a predefined list of commands (only title shown to user, not command). When user inputs a list of requested commands, a password and a TOTP code, the web service launches the requested commands. It can optionally substitute client IP and port into the command. Command output is not shown to user (only printed to console for logging).  
+This program provides multifactor authentication for anything accessible over network.  
 
-The main usecase is adding temporary short lived firewall rules specifically for the same client who submitted the input form. This can protect any generic web service with MFA that wouldn't otherwise have any MFA.  
+Usecase: Open html form. Enter password, TOTP code and tick checkboxes for which webpages/services you need to access. Submit. Then you get short lived firewall rules allowing momentary access from your client IP to requested server IP & port.  
+
+Minimal code, no processing of user inputs other than simple equality comparison. Only minimal information is shown to user. Denial of service is possible but nothing else should be.  
 
 Example config.json  
 ```
