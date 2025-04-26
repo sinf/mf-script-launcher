@@ -281,17 +281,15 @@ func backgroundCmd(srv *Service, clientIp string, clientPort string) {
     args := make([]string, len(srv.Command))
     copy(args, srv.Command)
     for i, arg := range args {
-        if arg == "%IP%" {
-            args[i] = clientIp
-        }
-        if arg == "%PORT%" {
-            args[i] = clientPort
-        }
-        if arg == "%DESCR%" {
-            args[i] = srv.Descr
-        }
-        if arg == "%NAME%" {
-            args[i] = srv.Name
+        switch arg {
+            case "%IP%":
+                args[i] = clientIp
+            case "%PORT%":
+                args[i] = clientPort
+            case "%DESCR%":
+                args[i] = srv.Descr
+            case "%NAME%":
+                args[i] = srv.Name
         }
     }
     log.Println(logprefix, args)
