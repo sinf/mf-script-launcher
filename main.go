@@ -119,7 +119,7 @@ func generateForm(services []Service) string {
         <input id="passphrase-input" type="password" name="passphrase" required autocomplete="current-password">
         <br>
         <label for="totp-input">Enter secret code:</label>
-        <input id="totp-input" type="text" name="secret_code" required>
+        <input id="totp-input" type="password" name="secret_code" required>
         <br>
         <label>Select service:<br/>
             {{range .Services}}
