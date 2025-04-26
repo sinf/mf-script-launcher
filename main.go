@@ -56,7 +56,22 @@ const EXAMPLE_CONFIG string = `{
     ]
 }`
 
-var STYLESHEET string = ""
+// If style.css exists, it replaces this at program startup.
+var STYLESHEET string = `
+body {
+    background-color: #222;
+    color: #aaa;
+}
+a[href] {
+    color: #1e8ad6;
+}
+a[href]:hover {
+    color: #3ba0e6;
+}
+.descr {
+    opacity: 0.5;
+}
+`
 
 func readFile(filename string) ([]byte, error) {
     file, err := os.Open(filename)
