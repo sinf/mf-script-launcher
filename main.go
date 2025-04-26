@@ -231,10 +231,10 @@ func makeSubmitOkPage(config *Config, serviceNames []string) string {
     linkTemplate := `<ul id="sv-links">
 {{ range . }}
 <li>
-	<a href="{{.Link}}">
-		<span>{{.Name}}</span>
-		<span>{{.Link}}</span>
-	</a>
+    <a href="{{.Link}}">
+        <span>{{.Name}}</span>
+        <span>{{.Link}}</span>
+    </a>
 </li>
 {{ end }}
 </ul>`
