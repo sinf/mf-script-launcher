@@ -342,16 +342,12 @@ func handleSubmit(config *Config, w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStyle(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet {
+    if r.Method == http.MethodGet {
+        w.Header().Set("Content-Type", "text/css")
+        fmt.Fprint(w, STYLESHEET)
+    } else {
         http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-        return
     }
-    if len(STYLESHEET)==0 {
-        http.Error(w, "No css available. Use your browser default style", http.StatusNotFound)
-        return
-    }
-    w.Header().Set("Content-Type", "text/css")
-    fmt.Fprint(w, STYLESHEET)
 }
 
 func test_totp_generator(secret string) {
